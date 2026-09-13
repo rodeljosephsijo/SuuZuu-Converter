@@ -84,8 +84,16 @@ async def handle_document(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
         buttons.append([InlineKeyboardButton("📄 Convert to PDF", callback_data="convert_docx_to_pdf")])
         text = f"📎 Received: `{file_name}`\nFormat: **Word Document**"
 
+   
     else:
-        text = f"⚠️ `{file_name}` format ({extension}) is not supported yet."
+        clean_ext = extension if extension else "Unknown"
+        await update.message.reply_text(
+            f"❌ **Unsupported file format (`{clean_ext}`)**\n\n"
+            "Please send a supported document (PDF, DOCX), spreadsheet (CSV, Excel), or image.\n\n"
+            "Use /start to view all supported formats.",
+            parse_mode="Markdown"
+        )
+        return
 
     reply_markup = InlineKeyboardMarkup(buttons) if buttons else None
     await update.message.reply_text(text, reply_markup=reply_markup, parse_mode="Markdown")
