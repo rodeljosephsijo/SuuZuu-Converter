@@ -1,4 +1,5 @@
 import os
+import asyncio
 from dotenv import load_dotenv
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import (
@@ -10,91 +11,167 @@ from telegram.ext import (
     filters,
 )
 
-# 1. Load the bot token from .env
+# Import your newly created business logic module
+import converters
+
 load_dotenv()
 
-# 2. Command: /start
+# --- HANDLER 1: /start Command ---
 async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     welcome_text = (
-        "👋 **Welcome to the Smart Converter!**\n\n"
-        "To get started, **upload a file** (PDF, PNG, JPG, or CSV) directly to this chat.\n\n"
-        "I will detect the format automatically and show you your conversion options."
+        "👋 **Welcome to the Universal File Converter!**\n\n"
+        "Send any of the following formats directly to this chat:\n"
+        "• **Documents:** PDF\n"
+        "• **Images:** JPG, PNG, WEBP, HEIC\n"
+        "• **Data:** CSV, Excel (.xlsx)\n\n"
+        "I will detect the file and offer all available conversions."
     )
     keyboard = [[InlineKeyboardButton("📋 View All Conversions", callback_data="show_all")]]
-    reply_markup = InlineKeyboardMarkup(keyboard)
-    await update.message.reply_text(welcome_text, reply_markup=reply_markup, parse_mode="Markdown")
+    await update.message.reply_text(
+        welcome_text,
+        reply_markup=InlineKeyboardMarkup(keyboard),
+        parse_mode="Markdown"
+    )
 
-# 3. Button Clicks (Callback Query)
+# --- HANDLER 2: File Uploads ---
+async def handle_document(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    document = update.message.document
+    file_name = document.file_name
+    _, extension = os.path.splitext(file_name)
+    extension = extension.lower()
+
+    # Store file metadata in temporary memory for the button handler
+    context.user_data["file_id"] = document.file_id
+    context.user_data["file_name"] = file_name
+    context.user_data["extension"] = extension
+
+    buttons = []
+
+    # Dynamic Menu Routing
+    if extension == ".pdf":
+        buttons.append([InlineKeyboardButton("📄 Convert to Word (.docx)", callback_data="convert_pdf_to_docx")])
+        text = f"📎 Received: `{file_name}`\nFormat: **PDF**"
+
+    elif extension in [".png", ".jpg", ".jpeg", ".webp", ".heic"]:
+        buttons.append([InlineKeyboardButton("📑 Convert to PDF", callback_data="convert_img_to_pdf")])
+        if extension != ".png":
+            buttons.append([InlineKeyboardButton("🖼️ Convert to PNG", callback_data="convert_img_to_png")])
+        if extension not in [".jpg", ".jpeg"]:
+            buttons.append([InlineKeyboardButton("🖼️ Convert to JPG", callback_data="convert_img_to_jpg")])
+        text = f"📎 Received: `{file_name}`\nFormat: **Image ({extension.upper().replace('.', '')})**"
+
+    elif extension == ".csv":
+        buttons.append([InlineKeyboardButton("📊 Convert to Excel (.xlsx)", callback_data="convert_csv_to_xlsx")])
+        text = f"📎 Received: `{file_name}`\nFormat: **CSV Spreadsheet**"
+
+    elif extension in [".xlsx", ".xls"]:
+        buttons.append([InlineKeyboardButton("📄 Convert to CSV (.csv)", callback_data="convert_xlsx_to_csv")])
+        text = f"📎 Received: `{file_name}`\nFormat: **Excel Workbook**"
+
+    else:
+        text = f"⚠️ `{file_name}` format ({extension}) is not supported yet."
+
+    reply_markup = InlineKeyboardMarkup(buttons) if buttons else None
+    await update.message.reply_text(text, reply_markup=reply_markup, parse_mode="Markdown")
+
+
+# --- HANDLER 3: Button Clicks & Conversion ---
 async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     query = update.callback_query
     await query.answer()
 
     if query.data == "show_all":
-        help_text = (
+        roster_text = (
             "🎯 **Supported Conversions:**\n\n"
             "📄 **PDF:** Convert to Word (.docx)\n"
-            "🖼️ **Images (PNG/JPG):** Convert to PDF\n"
-            "📊 **Data (CSV):** Convert to Excel (.xlsx)\n\n"
-            "👉 *Send any of these files to try it out!*"
+            "🖼️ **Images (PNG, JPG, WEBP, HEIC):** Convert to PDF, JPG, or PNG\n"
+            "📊 **Data:** CSV ⇄ Excel (.xlsx)\n\n"
+            "👉 *Upload any supported file to begin!*"
         )
-        await query.edit_message_text(help_text, parse_mode="Markdown")
+        await query.edit_message_text(roster_text, parse_mode="Markdown")
+        return
 
-    elif query.data.startswith("convert_"):
-        action = query.data.replace("convert_", "")
-        await query.edit_message_text(
-            f"⚙️ Action selected: **{action.upper()}**\n\n*(Ready to connect conversion engine!)*",
-            parse_mode="Markdown"
-        )
+    file_id = context.user_data.get("file_id")
+    file_name = context.user_data.get("file_name")
 
-# 4. File Upload Listener & Extension Router
-async def handle_document(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    document = update.message.document
-    file_name = document.file_name
+    if not file_id or not file_name:
+        await query.edit_message_text("⚠️ File session expired. Please re-upload your file.")
+        return
 
-    # Extract extension safely
-    _, extension = os.path.splitext(file_name)
-    extension = extension.lower()
+    base_name, _ = os.path.splitext(file_name)
+    input_path = f"temp_{file_name}"
+    output_path = None
 
-    if extension == ".pdf":
-        buttons = [
-            [InlineKeyboardButton("📄 Convert to Word (.docx)", callback_data="convert_pdf_to_docx")]
-        ]
-        text = f"📎 Received: `{file_name}`\n\nFormat: **PDF**\nChoose an option below:"
+    await query.edit_message_text("⏳ Processing your conversion...")
 
-    elif extension in [".png", ".jpg", ".jpeg"]:
-        buttons = [
-            [InlineKeyboardButton("📑 Convert to PDF", callback_data="convert_img_to_pdf")]
-        ]
-        text = f"📎 Received: `{file_name}`\n\nFormat: **Image**\nChoose an option below:"
+    try:
+        # Step 1: Download from Telegram
+        telegram_file = await context.bot.get_file(file_id)
+        await telegram_file.download_to_drive(input_path)
 
-    elif extension == ".csv":
-        buttons = [
-            [InlineKeyboardButton("📊 Convert to Excel (.xlsx)", callback_data="convert_csv_to_xlsx")]
-        ]
-        text = f"📎 Received: `{file_name}`\n\nFormat: **CSV Spreadsheet**\nChoose an option below:"
+        # Step 2: Route to the correct function in converters.py
+        if query.data == "convert_pdf_to_docx":
+            output_path = f"temp_{base_name}.docx"
+            await asyncio.to_thread(converters.convert_pdf_to_word, input_path, output_path)
 
-    else:
-        buttons = []
-        text = f"⚠️ Received: `{file_name}`\n\nSorry, **{extension}** is not supported yet."
+        elif query.data == "convert_img_to_pdf":
+            output_path = f"temp_{base_name}.pdf"
+            await asyncio.to_thread(converters.convert_image_to_pdf, input_path, output_path)
 
-    reply_markup = InlineKeyboardMarkup(buttons) if buttons else None
-    await update.message.reply_text(text, reply_markup=reply_markup, parse_mode="Markdown")
+        elif query.data == "convert_img_to_png":
+            output_path = f"temp_{base_name}.png"
+            await asyncio.to_thread(converters.convert_image_format, input_path, output_path, "PNG")
 
-# 5. Boot sequence
+        elif query.data == "convert_img_to_jpg":
+            output_path = f"temp_{base_name}.jpg"
+            await asyncio.to_thread(converters.convert_image_format, input_path, output_path, "JPEG")
+
+        elif query.data == "convert_csv_to_xlsx":
+            output_path = f"temp_{base_name}.xlsx"
+            await asyncio.to_thread(converters.convert_csv_to_excel, input_path, output_path)
+
+        elif query.data == "convert_xlsx_to_csv":
+            output_path = f"temp_{base_name}.csv"
+            await asyncio.to_thread(converters.convert_excel_to_csv, input_path, output_path)
+        # ==========================================
+
+        # Step 3: Upload the converted file back to the chat
+        if output_path and os.path.exists(output_path):
+            with open(output_path, "rb") as converted_file:
+                await context.bot.send_document(
+                    chat_id=query.message.chat_id,
+                    document=converted_file,
+                    filename=os.path.basename(output_path).replace("temp_", ""),
+                    caption="✅ Here is your converted document!"
+                )
+            await query.delete_message()
+        else:
+            raise Exception("Output file was not generated.")
+
+    except Exception as e:
+        await query.edit_message_text(f"❌ Conversion failed: {str(e)}")
+
+    finally:
+        # Step 4: Cleanup temporary files from your laptop
+        for path in [input_path, output_path]:
+            if path and os.path.exists(path):
+                os.remove(path)
+
+
+# --- MAIN BOOT LOOP ---
 if __name__ == '__main__':
     print("Bot is booting up...")
     token = os.getenv("BOT_TOKEN")
-
+    
     if not token:
-        print("❌ ERROR: No BOT_TOKEN found. Check your .env file!")
+        print("❌ ERROR: No BOT_TOKEN found.")
         exit()
 
     app = ApplicationBuilder().token(token).build()
-
-    # Register handlers
+    
     app.add_handler(CommandHandler("start", start_command))
     app.add_handler(CallbackQueryHandler(button_handler))
     app.add_handler(MessageHandler(filters.Document.ALL, handle_document))
 
-    print("✅ Bot is live and listening for files!")
+    print("✅ Universal Converter Bot is live and Modular!")
     app.run_polling()
