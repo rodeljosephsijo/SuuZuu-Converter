@@ -20,11 +20,11 @@ load_dotenv()
 async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     welcome_text = (
         "👋 **Welcome to the Universal File Converter!**\n\n"
-        "Send any of the following formats directly to this chat:\n"
-        "• **Documents:** PDF\n"
-        "• **Images:** JPG, PNG, WEBP, HEIC\n"
-        "• **Data:** CSV, Excel (.xlsx)\n\n"
-        "I will detect the file and offer all available conversions."
+        "Send your file or photo directly to this chat:\n"
+        "• **Documents:** PDF, Word (`.docx`)\n"
+        "• **Images:** JPG, PNG, WEBP, HEIC, or Mobile Photos\n"
+        "• **Data:** CSV, Excel (`.xlsx`, `.xls`)\n\n"
+        "I will detect the format and show available conversion options."
     )
     keyboard = [[InlineKeyboardButton("📋 View All Conversions", callback_data="show_all")]]
     await update.message.reply_text(
@@ -50,6 +50,7 @@ async def handle_document(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
     # Dynamic Menu Routing
     if extension == ".pdf":
         buttons.append([InlineKeyboardButton("📄 Convert to Word (.docx)", callback_data="convert_pdf_to_docx")])
+        buttons.append([InlineKeyboardButton("🖼️ Convert to Images (.zip)", callback_data="convert_pdf_to_zip")])
         text = f"📎 Received: `{file_name}`\nFormat: **PDF**"
 
     elif extension in [".png", ".jpg", ".jpeg", ".webp", ".heic"]:
@@ -108,10 +109,19 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     if query.data == "show_all":
         roster_text = (
             "🎯 **Supported Conversions:**\n\n"
-            "📄 **PDF:** Convert to Word (.docx)\n"
-            "🖼️ **Images (PNG, JPG, WEBP, HEIC):** Convert to PDF, JPG, or PNG\n"
-            "📊 **Data:** CSV ⇄ Excel (.xlsx)\n\n"
-            "👉 *Upload any supported file to begin!*"
+            "📄 **PDF:**\n"
+            "  • Convert to Word (`.docx`)\n"
+            "  • Render pages to Images (`.zip`)\n\n"
+            "📝 **Word (.docx):**\n"
+            "  • Convert to PDF\n\n"
+            "🖼️ **Images (JPG, PNG, WEBP, HEIC & Mobile Photos):**\n"
+            "  • Convert to PDF\n"
+            "  • Convert to PNG\n"
+            "  • Convert to JPG\n\n"
+            "📊 **Spreadsheets:**\n"
+            "  • CSV ➔ Excel (`.xlsx`)\n"
+            "  • Excel (`.xlsx`, `.xls`) ➔ CSV\n\n"
+            "👉 *Upload any file or photo above to get started!*"
         )
         await query.edit_message_text(roster_text, parse_mode="Markdown")
         return
@@ -162,6 +172,10 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         elif query.data == "convert_docx_to_pdf":
             output_path = f"temp_{base_name}.pdf"
             await asyncio.to_thread(converters.convert_word_to_pdf, input_path, output_path)
+
+        elif query.data == "convert_pdf_to_zip":
+            output_path = f"temp_{base_name}_images.zip"
+            await asyncio.to_thread(converters.convert_pdf_to_zip, input_path, output_path)
         # ==========================================
 
         # Step 3: Upload the converted file back to the chat
