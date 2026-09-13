@@ -68,11 +68,36 @@ async def handle_document(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
         buttons.append([InlineKeyboardButton("📄 Convert to CSV (.csv)", callback_data="convert_xlsx_to_csv")])
         text = f"📎 Received: `{file_name}`\nFormat: **Excel Workbook**"
 
+    elif extension == ".docx":
+        buttons.append([InlineKeyboardButton("📄 Convert to PDF", callback_data="convert_docx_to_pdf")])
+        text = f"📎 Received: `{file_name}`\nFormat: **Word Document**"
+
     else:
         text = f"⚠️ `{file_name}` format ({extension}) is not supported yet."
 
     reply_markup = InlineKeyboardMarkup(buttons) if buttons else None
     await update.message.reply_text(text, reply_markup=reply_markup, parse_mode="Markdown")
+
+
+# --- HANDLER: Mobile / Compressed Photos ---
+async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    # Telegram sends multiple sizes; the last item [-1] is the highest resolution
+    photo = update.message.photo[-1]
+    file_name = f"photo_{photo.file_unique_id[:6]}.jpg"
+
+    # Store photo details in session memory
+    context.user_data["file_id"] = photo.file_id
+    context.user_data["file_name"] = file_name
+    context.user_data["extension"] = ".jpg"
+
+    # Offer relevant conversion options
+    buttons = [
+        [InlineKeyboardButton("📑 Convert to PDF", callback_data="convert_img_to_pdf")],
+        [InlineKeyboardButton("🖼️ Convert to PNG", callback_data="convert_img_to_png")]
+    ]
+
+    text = f"📷 Received photo (`{file_name}`).\nChoose an option below:"
+    await update.message.reply_text(text, reply_markup=InlineKeyboardMarkup(buttons), parse_mode="Markdown")
 
 
 # --- HANDLER 3: Button Clicks & Conversion ---
@@ -133,6 +158,10 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         elif query.data == "convert_xlsx_to_csv":
             output_path = f"temp_{base_name}.csv"
             await asyncio.to_thread(converters.convert_excel_to_csv, input_path, output_path)
+
+        elif query.data == "convert_docx_to_pdf":
+            output_path = f"temp_{base_name}.pdf"
+            await asyncio.to_thread(converters.convert_word_to_pdf, input_path, output_path)
         # ==========================================
 
         # Step 3: Upload the converted file back to the chat
@@ -172,6 +201,7 @@ if __name__ == '__main__':
     app.add_handler(CommandHandler("start", start_command))
     app.add_handler(CallbackQueryHandler(button_handler))
     app.add_handler(MessageHandler(filters.Document.ALL, handle_document))
+    app.add_handler(MessageHandler(filters.PHOTO, handle_photo))
 
     print("✅ Universal Converter Bot is live and Modular!")
     app.run_polling()
