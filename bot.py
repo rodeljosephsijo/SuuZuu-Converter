@@ -36,6 +36,17 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
 # --- HANDLER 2: File Uploads ---
 async def handle_document(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     document = update.message.document
+
+    MAX_FILE_SIZE = 20 * 1024 * 1024
+    if document.file_size and document.file_size > MAX_FILE_SIZE:
+        size_mb = round(document.file_size / (1024 * 1024), 2)
+        await update.message.reply_text(
+            f"⚠️ **File too large ({size_mb} MB)!**\n\n"
+            "Due to Telegram Bot API constraints, files must be under **20 MB** to convert.",
+            parse_mode="Markdown"
+        )
+        return
+    
     file_name = document.file_name
     _, extension = os.path.splitext(file_name)
     extension = extension.lower()
@@ -78,6 +89,15 @@ async def handle_document(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
 
     reply_markup = InlineKeyboardMarkup(buttons) if buttons else None
     await update.message.reply_text(text, reply_markup=reply_markup, parse_mode="Markdown")
+
+
+async def handle_unknown_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Guides users when they send non-command text."""
+    await update.message.reply_text(
+        "👋 **Universal Converter**\n\n"
+        "Send me a file or photo directly, or use /start to see the menu.",
+        parse_mode="Markdown"
+    )
 
 
 # --- HANDLER: Mobile / Compressed Photos ---
@@ -216,6 +236,7 @@ if __name__ == '__main__':
     app.add_handler(CallbackQueryHandler(button_handler))
     app.add_handler(MessageHandler(filters.Document.ALL, handle_document))
     app.add_handler(MessageHandler(filters.PHOTO, handle_photo))
+    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_unknown_text))
 
     print("✅ Universal Converter Bot is live and Modular!")
     app.run_polling()
