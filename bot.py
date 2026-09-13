@@ -11,6 +11,8 @@ from telegram.ext import (
     filters,
 )
 
+load_dotenv()
+
 # Import your newly created business logic module
 import converters
 

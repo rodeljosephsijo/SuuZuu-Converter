@@ -1,0 +1,9 @@
+python-telegram-bot>=20.0
+PyMuPDF
+docx2pdf
+pandas
+openpyxl
+Pillow
+pillow-heif
+python-dotenv
+pywin32; sys_platform == 'win32'

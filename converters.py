@@ -6,6 +6,8 @@ from pdf2docx import Converter
 import pillow_heif
 from docx2pdf import convert as docx2pdf_convert
 import pythoncom
+import fitz
+import zipfile
 
 # Enable HEIC decoding for iOS photos
 pillow_heif.register_heif_opener()
@@ -51,4 +53,23 @@ def convert_word_to_pdf(input_path: str, output_path: str) -> str:
         docx2pdf_convert(input_path, output_path)
     finally:
         pythoncom.CoUninitialize()
+    return output_path
+
+def convert_pdf_to_zip(input_path: str, output_path: str) -> str:
+    """Converts a PDF to a ZIP archive containing PNG images of each page."""
+    pdf_document = fitz.open(input_path)
+    
+    # Open a new ZIP file in write mode
+    with zipfile.ZipFile(output_path, 'w', zipfile.ZIP_DEFLATED) as zipf:
+        for page_num in range(len(pdf_document)):
+            page = pdf_document.load_page(page_num)
+            # Render page to an image (dpi=150 keeps file sizes reasonable)
+            pix = page.get_pixmap(dpi=150)
+            image_bytes = pix.tobytes("png")
+            
+            # Write the image bytes directly into the ZIP archive
+            image_filename = f"page_{page_num + 1}.png"
+            zipf.writestr(image_filename, image_bytes)
+            
+    pdf_document.close()
     return output_path
