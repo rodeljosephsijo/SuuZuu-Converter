@@ -10,6 +10,7 @@ from telegram.ext import (
     MessageHandler,
     filters,
 )
+from datetime import datetime
 
 load_dotenv()
 
@@ -168,6 +169,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     output_path = None
 
     await query.edit_message_text("⏳ Processing your conversion...")
+    print(f"[{datetime.now()}] Request: {query.data} | File: {file_name} | User: {update.effective_user.id}")
 
     try:
         # Step 1: Download from Telegram
@@ -218,11 +220,13 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
                     caption="✅ Here is your converted document!"
                 )
             await query.delete_message()
+            print(f"[{datetime.now()}] Success: {query.data}")
         else:
             raise Exception("Output file was not generated.")
 
     except Exception as e:
         await query.edit_message_text(f"❌ Conversion failed: {str(e)}")
+        print(f"[{datetime.now()}] Failed: {query.data} | Error: {str(e)}")
 
     finally:
         # Step 4: Cleanup temporary files from your laptop
