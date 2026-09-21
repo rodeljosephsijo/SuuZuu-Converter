@@ -4,8 +4,7 @@ from PIL import Image
 import pandas as pd
 from pdf2docx import Converter
 import pillow_heif
-from docx2pdf import convert as docx2pdf_convert
-import pythoncom
+import subprocess
 import fitz
 import zipfile
 
@@ -46,13 +45,15 @@ def convert_excel_to_csv(input_path: str, output_path: str) -> str:
     return output_path
 
 def convert_word_to_pdf(input_path: str, output_path: str) -> str:
-    """Converts a Word (.docx) document to PDF."""
-    # pythoncom initialization is strictly required when running COM objects in background threads on Windows
-    pythoncom.CoInitialize() 
-    try:
-        docx2pdf_convert(input_path, output_path)
-    finally:
-        pythoncom.CoUninitialize()
+    """Converts a Word (.docx) document to PDF using LibreOffice (Linux-compatible)."""
+    output_dir = os.path.dirname(output_path) or "."
+    subprocess.run(
+        ["libreoffice", "--headless", "--convert-to", "pdf", "--outdir", output_dir, input_path],
+        check=True, timeout=60
+    )
+    generated = os.path.join(output_dir, os.path.splitext(os.path.basename(input_path))[0] + ".pdf")
+    if generated != output_path:
+        os.rename(generated, output_path)
     return output_path
 
 def convert_pdf_to_zip(input_path: str, output_path: str) -> str:
