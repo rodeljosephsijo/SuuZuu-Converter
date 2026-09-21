@@ -1,4 +1,5 @@
 python-telegram-bot>=20.0
+pdf2docx
 PyMuPDF
 pandas
 openpyxl
